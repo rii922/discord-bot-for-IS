@@ -3,12 +3,13 @@ from config import client, TOKEN, BOT_NOTIFICATION_CHANNEL_ID, MINIGAME_CHANNEL_
 from keep_alive import keep_alive
 from notification.voice_channel_notification import voice_channel_notification
 from notification.emoji_notification import emoji_notification
-from minigame import akinator
+from minigame import akinator, hangman
 
 @client.event
 async def on_ready():
     print("起動完了 💪")
     await client.get_channel(BOT_NOTIFICATION_CHANNEL_ID).send("起動完了 💪")
+    hangman.init()
 
 @client.event
 async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
@@ -26,6 +27,8 @@ async def on_message(message: discord.Message):
         return
     if message.content.strip() in akinator.COMMANDS:
         await akinator.play()
+    if message.content.strip() in hangman.COMMANDS:
+        await hangman.play()
 
 keep_alive()
 client.run(TOKEN)
