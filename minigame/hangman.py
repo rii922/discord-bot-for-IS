@@ -2,81 +2,142 @@ import discord
 import random
 import requests
 import asyncio
+import re
 from config import client, MINIGAME_CHANNEL_ID
+from minigame.minigame import Minigame
 
-COMMANDS = ["Hangman", "hangman"]
+MIN_LEN = 6
+DIFFICULTY_THRESHOLD = [20000, 10000, 5000]
 
-words = []
+class Hangman(Minigame):
+    def __init__(self) -> None:
+        f = open("minigame/hangman_words.txt", "r")
+        lines = f.read().split("\n")
+        f.close()
+        self.words_normal = []
+        self.words_hard = []
+        self.words_extreme = []
+        pattern = re.compile(r'"([a-zA-Z]+)","([0-9]+)"')
+        for line in lines:
+            m = pattern.match(line)
+            if m is not None and len(m.groups()) >= 2:
+                word = m.group(1).lower()
+                frequency = int(m.group(2))
+                if len(word) < MIN_LEN:
+                    continue
+                if frequency >= DIFFICULTY_THRESHOLD[0]:
+                    self.words_normal.append(word)
+                elif frequency >= DIFFICULTY_THRESHOLD[1]:
+                    self.words_hard.append(word)
+                elif frequency >= DIFFICULTY_THRESHOLD[2]:
+                    self.words_extreme.append(word)
+        print(f"{len(self.words_normal)}, {len(self.words_hard)}, {len(self.words_extreme)}")
 
-def init():
-    f = open("minigame/hangman_words.txt", "r")
-    global words
-    words = f.read().split()
-    f.close()
+    def commands(self) -> list[str]:
+        return ["hangman"]
+    
+    def help(self) -> str:
+        return\
+            "単語に含まれると思われる文字を 1 つずつ選びながら単語を当てるゲームです 🔠\n"\
+            "オプション引数として難易度 (hard, extreme) を与えることもできます"
+    
+    def help_detail(self) -> str:
+        return\
+            f"{self.help()}\n\n"\
+            "以下のようにゲームを進めていきます:\n"\
+            "- 単語に含まれると思われる文字を 1 文字答える\n"\
+            "  - 例: `x`\n"\
+            "  - 実際にその文字が単語に含まれていれば何文字目にあるかがすべてオープンされ、含まれていなければ残機が 1 減ります\n"\
+            "- 単語そのものを予想する\n"\
+            "  - 例: `word`\n"\
+            "  - 合っていれば単語全体がオープンされ、合っていなければ残機が 1 減ります\n"\
+            "残機が 0 になる前に単語のすべての文字をオープンできればクリアです！"
 
-def choose_word():
-    return random.choice(words)
-
-async def play():
-    minigame_channel = client.get_channel(MINIGAME_CHANNEL_ID)
-    thread = await minigame_channel.create_thread(name="hangman", type=discord.ChannelType.public_thread)
-    word = choose_word()
-    life = len(word)
-    opened = [False for _ in range(len(word))]
-    chars = []
-    try:
-        data = requests.get("https://api.dictionaryapi.dev/api/v2/entries/en/" + word).json()[0]
-    except:
-        data = None
-    description = "**" + word + "**"
-    if "phonetic" in data:
-        description += " " + data["phonetic"]
-    else:
-        description += " (phonetic not found)"
-    if "meanings" in data:
-        for meaning in data["meanings"]:
-            description += "\n__" + meaning["partOfSpeech"] + "__"
-            for definition in meaning["definitions"]:
-                description += "\n- " + definition["definition"]
-    else:
-        description += "\n(meanings not found)"
-    if "sourceUrls" in data:
-        description += "\nsource: " + " ".join(data["sourceUrls"])
-    else:
-        description += "\nsource not found"
-    await thread.send("__**hangman**__ 🔠\n英単語を当てよう！\n答え方:\n- アルファベット1文字を開ける\n- 単語を丸ごと答える")
-    def check(ans_message):
-        if ans_message.channel != thread:
-            return False
-        for c in ans_message.content:
-            if not ("a" <= c <= "z" or "A" <= c <= "Z"):
-                return False
-        return True
-    while life > 0:
-        await thread.send("現在の状態: **" + " ".join([(word[i] if opened[i] else "\\_") for i in range(len(word))]) + "**\n残機: " + str(life) + "\n使った文字: " + " ".join(chars))
+    async def play(self, args: list[str]) -> None:
+        minigame_channel = client.get_channel(MINIGAME_CHANNEL_ID)
+        thread = await minigame_channel.create_thread(name="Hangman", type=discord.ChannelType.public_thread)
+        if len(args) == 0:
+            word = random.choice(self.words_normal)
+        elif args[0].lower() == "hard":
+            word = random.choice(self.words_hard)
+        elif args[0].lower() == "extreme":
+            word = random.choice(self.words_extreme)
+        else:
+            word = random.choice(self.words_normal)
+        life = 6
+        opened = [False for _ in range(len(word))]
+        chars = ""
         try:
-            ans_message = await client.wait_for("message", check=check, timeout=180)
-            if len(ans_message.content) == 1:
-                char = ans_message.content.lower()
-                for i in range(len(word)):
-                    if word[i] == char:
-                        opened[i] = True
-                if char in word:
-                    chars.append("**" + char + "**")
+            data = requests.get("https://api.dictionaryapi.dev/api/v2/entries/en/" + word).json()[0]
+        except:
+            data = None
+        description = "**" + word + "**"
+        if "phonetic" in data:
+            description += " " + data["phonetic"]
+        else:
+            description += " (phonetic not found)"
+        if "meanings" in data:
+            for meaning in data["meanings"]:
+                description += "\n__" + meaning["partOfSpeech"] + "__"
+                for definition in meaning["definitions"]:
+                    description += "\n- " + definition["definition"]
+        else:
+            description += "\n(meanings not found)"
+        if "sourceUrls" in data:
+            description += "\nsource:"
+            for source in data["sourceUrls"]:
+                description += "\n- " + source
+        else:
+            description += "\n(source not found)"
+        await thread.send(
+            "__**hangman**__ 🔠\n"\
+            "英単語を当てよう！\n"\
+            "答え方:\n"\
+                "- アルファベット 1 種類を開ける\n"\
+                "- 単語を丸ごと答える"
+        )
+        def check(ans_message):
+            if ans_message.channel != thread:
+                return False
+            for c in ans_message.content:
+                if not ("a" <= c <= "z" or "A" <= c <= "Z"):
+                    return False
+            return True
+        while life > 0:
+            blank = "\\_"
+            await thread.send(
+                f"現在の状態: **{' '.join([(word[i] if opened[i] else blank) for i in range(len(word))])}**\n"\
+                f"残機: {str(life)}\n"\
+                f"使った文字: {' '.join([(f'**{char}**' if char in word else char) for char in chars])}"
+            )
+            try:
+                ans_message = await client.wait_for("message", check=check, timeout=180)
+                if len(ans_message.content) == 1:
+                    char = ans_message.content.lower()
+                    if char in chars:
+                        await thread.send("その文字は既出です 🤔")
+                    else:
+                        for i in range(len(word)):
+                            if word[i] == char:
+                                opened[i] = True
+                        chars += char
+                        if not char in word:
+                            life -= 1
+                        if not False in opened:
+                            await thread.send(ans_message.author.mention + "正解 👏 (**" + word + "**)")
+                            await ans_message.add_reaction("👍")
+                            break
                 else:
-                    chars.append(char)
-                    life -= 1
-            else:
-                predict = ans_message.content.lower()
-                if predict == word:
-                    await thread.send(ans_message.author.mention + "正解 👏 (**" + word + "**)")
-                    await ans_message.add_reaction("👍")
-                    break
-                else:
-                    life -= 1
-        except asyncio.TimeoutError:
-            await thread.send("3分間無言だったので終了するよ 👋\n正解は**" + word + "**でした！")
-            break
-    if life == 0:
-        await thread.send("残念... 😇\n正解は**" + word + "**でした！")
-    await thread.send(description)
+                    predict = ans_message.content.lower()
+                    if predict == word:
+                        await thread.send(ans_message.author.mention + "正解 👏 (**" + word + "**)")
+                        await ans_message.add_reaction("👍")
+                        break
+                    else:
+                        life -= 1
+            except asyncio.TimeoutError:
+                await thread.send("3分間無言だったので終了するよ 👋\n正解は**" + word + "**でした！")
+                break
+        if life == 0:
+            await thread.send("残念... 😇\n正解は**" + word + "**でした！")
+        await thread.send(description)

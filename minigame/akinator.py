@@ -2,8 +2,7 @@ import discord
 import requests
 import re
 from config import client, MINIGAME_CHANNEL_ID
-
-COMMANDS = ["Akinator", "akinator", "AKINATOR", "アキネイター"]
+from minigame.minigame import Minigame
 
 class SessionFailure(Exception):
     pass
@@ -20,7 +19,7 @@ class InvalidCompletion(Exception):
 class CantGoAnyFurther(Exception):
     pass
 
-class Akinator:
+class AkinatorLogic:
     def __init__(self):
         self.question = None
         self.step = None
@@ -114,10 +113,10 @@ class ChoicesView(discord.ui.View):
         await interaction.response.send_message("いいえ")
         self.stop()
     
-    @discord.ui.button(label="わからない", style=discord.ButtonStyle.blurple)
+    @discord.ui.button(label="分からない", style=discord.ButtonStyle.blurple)
     async def button_idk(self, interaction, button: discord.Button):
         self.value = 2
-        await interaction.response.send_message("わからない")
+        await interaction.response.send_message("分からない")
         self.stop()
     
     @discord.ui.button(label="たぶんそう 部分的にそう", style=discord.ButtonStyle.blurple)
@@ -132,10 +131,10 @@ class ChoicesView(discord.ui.View):
         await interaction.response.send_message("たぶん違う そうでもない")
         self.stop()
     
-    @discord.ui.button(label="修正する", style=discord.ButtonStyle.red)
+    @discord.ui.button(label="戻る", style=discord.ButtonStyle.red)
     async def button_back(self, interaction, button: discord.Button):
         self.value = -1
-        await interaction.response.send_message("修正する")
+        await interaction.response.send_message("戻る")
         self.stop()
 
 class ConfirmationView(discord.ui.View):
@@ -174,62 +173,75 @@ def float_to_color(x):
         r, g, b = 1.0, 0.0, 1.0-(x-5/6)*6
     return float_to_hex(r)*0x10000 + float_to_hex(g)*0x100 + float_to_hex(b)
 
-async def play():
-    minigame_channel = client.get_channel(MINIGAME_CHANNEL_ID)
-    thread = await minigame_channel.create_thread(name="Akinator", type=discord.ChannelType.public_thread)
-    aki = Akinator()
-    miss_count = 0
-    try:
-        aki.start_game("jp")
-        await thread.send("__**Akinator**__ 🧞\nやあ、私はアキネイターです\n有名な人物やキャラクターを思い浮かべて。魔人が誰でも当ててみせよう。魔人は何でもお見通しさ ✨")
-        while True:
-            while not aki.guessed:
-                embed = discord.Embed(title="質問"+str(aki.step+1), color=float_to_color(aki.progression/100))
-                embed.add_field(name=aki.question, value="下のモーダルから答えてね")
-                embed.set_thumbnail(url=f"{aki.uri}/assets/img/akitudes_670x1096/{aki.akitude}")
-                choices_view = ChoicesView()
-                await thread.send(embed=embed, view=choices_view)
-                await choices_view.wait()
-                if choices_view.value is None:
-                    await thread.send("3分間操作がなかったので終了するよ 👋")
-                    return
-                elif choices_view.value == -1:
-                    if aki.step >= 1:
-                        aki.back()
+class Akinator(Minigame):
+    def commands(self) -> list[str]:
+        return ["akinator", "アキネイター", "アキネーター"]
+    
+    def help(self) -> str:
+        return "あなたが思い浮かべたキャラクターや実在の有名人などを、魔人が当ててみせます 🧞"
+    
+    def help_detail(self) -> str:
+        return\
+            f"{self.help()}\n\n"\
+            "魔人がそのキャラクター (人物) に関する質問をするので、「はい」「いいえ」「分からない」「たぶんそう 部分的にそう」「たぶん違う そうでもない」の選択肢から選んでください！\n"\
+            "回答を間違えたときは戻ることもできます"
+    
+    async def play(self, args: list[str]) -> None:
+        minigame_channel = client.get_channel(MINIGAME_CHANNEL_ID)
+        thread = await minigame_channel.create_thread(name="Akinator", type=discord.ChannelType.public_thread)
+        aki = AkinatorLogic()
+        miss_count = 0
+        try:
+            aki.start_game("jp")
+            await thread.send("__**Akinator**__ 🧞\nやあ、私はアキネイターです\n有名な人物やキャラクターを思い浮かべて。魔人が誰でも当ててみせよう。魔人は何でもお見通しさ ✨")
+            while True:
+                while not aki.guessed:
+                    embed = discord.Embed(title="質問"+str(aki.step+1), color=float_to_color(aki.progression/100))
+                    embed.add_field(name=aki.question, value="下のモーダルから答えてね")
+                    embed.set_thumbnail(url=f"{aki.uri}/assets/img/akitudes_670x1096/{aki.akitude}")
+                    choices_view = ChoicesView()
+                    await thread.send(embed=embed, view=choices_view)
+                    await choices_view.wait()
+                    if choices_view.value is None:
+                        await thread.send("3分間操作がなかったので終了するよ 👋")
+                        return
+                    elif choices_view.value == -1:
+                        if aki.step >= 1:
+                            aki.back()
+                        else:
+                            await thread.send("これ以上前の問題には戻れないよ 💢")
                     else:
-                        await thread.send("これ以上前の問題には戻れないよ 💢")
+                        aki.answer(choices_view.value)
+                guess_embed = discord.Embed(title="思い浮かべているのは", color=float_to_color(aki.progression/100))
+                guess_embed.add_field(name=aki.guess_name, value=aki.guess_description)
+                guess_embed.set_image(url=aki.guess_image)
+                confirmation_view = ConfirmationView()
+                await thread.send(embed=guess_embed, view=confirmation_view)
+                await confirmation_view.wait()
+                if confirmation_view.value == 0:
+                    if miss_count == 0:
+                        correct_message = "よぉし！また正解！！魔人は何でもお見通しだ 😤"
+                    elif miss_count == 1:
+                        correct_message = "よぉし！正解したぞ ✌"
+                    elif miss_count == 2:
+                        correct_message = "よかった！なんとか正解 😙"
+                    else:
+                        correct_message = "ふぅ～、難しかったがようやく正解したようだ 😜"
+                    await thread.send(correct_message)
+                    channel_embed = discord.Embed(color=float_to_color(aki.progression/100))
+                    channel_embed.add_field(name=aki.guess_name, value=aki.guess_description)
+                    channel_embed.set_image(url=aki.guess_image)
+                    await minigame_channel.send(embed=channel_embed)
+                    return
+                elif confirmation_view.value == 1:
+                    aki.exclude()
+                    miss_count += 1
                 else:
-                    aki.answer(choices_view.value)
-            guess_embed = discord.Embed(title="思い浮かべているのは", color=float_to_color(aki.progression/100))
-            guess_embed.add_field(name=aki.guess_name, value=aki.guess_description)
-            guess_embed.set_image(url=aki.guess_image)
-            confirmation_view = ConfirmationView()
-            await thread.send(embed=guess_embed, view=confirmation_view)
-            await confirmation_view.wait()
-            if confirmation_view.value == 0:
-                if miss_count == 0:
-                    correct_message = "よぉし！また正解！！魔人は何でもお見通しだ 😤"
-                elif miss_count == 1:
-                    correct_message = "よぉし！正解したぞ ✌"
-                elif miss_count == 2:
-                    correct_message = "よかった！なんとか正解 😙"
-                else:
-                    correct_message = "ふぅ～、難しかったがようやく正解したようだ 😜"
-                await thread.send(correct_message)
-                channel_embed = discord.Embed(color=float_to_color(aki.progression/100))
-                channel_embed.add_field(name=aki.guess_name, value=aki.guess_description)
-                channel_embed.set_image(url=aki.guess_image)
-                await minigame_channel.send(embed=channel_embed)
-                return
-            elif confirmation_view.value == 1:
-                aki.exclude()
-                miss_count += 1
-            else:
-                await thread.send("3分間操作がなかったので終了するよ ⌛")
-                return
-    except NoMoreQuestions:
-        await thread.send("う～ん、魔人はそのキャラクターを知らないかも... 😵")
-    except Exception as e:
-        await thread.send(e)
-        await thread.send("エラーが発生しました...やり直してね 😇")
-        return
+                    await thread.send("3分間操作がなかったので終了するよ ⌛")
+                    return
+        except NoMoreQuestions:
+            await thread.send("う～ん、魔人はそのキャラクターを知らないかも... 😵")
+        except Exception as e:
+            await thread.send(e)
+            await thread.send("エラーが発生しました...やり直してね 😇")
+            return
