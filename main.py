@@ -3,7 +3,6 @@ from config import client, TOKEN, BOT_NOTIFICATION_CHANNEL_ID, MINIGAME_CHANNEL_
 from keep_alive import keep_alive
 from notification.voice_channel_notification import voice_channel_notification
 from notification.emoji_notification import emoji_notification
-# from minigame import akinator, hangman
 from minigame.minigame import Minigame
 from minigame.hangman import Hangman
 from minigame.akinator import Akinator
@@ -31,7 +30,11 @@ async def on_message(message: discord.Message):
         return
     command = message.content.strip().split()
     if command[0].lower() in ["help", "ヘルプ"]:
-        help_msgs = []
+        help_msgs = [
+            "`help`:\n"\
+            "ヘルプを表示します 🔰\n"\
+            "オプション引数として他のコマンドを与えると、そのコマンドに関する詳しいヘルプを表示します"
+        ]
         if len(command) == 1:
             for minigame in minigames:
                 help_msgs.append(f"{' '.join([f'`{minigame_command}`' for minigame_command in minigame.commands()])}:\n{minigame.help()}")
