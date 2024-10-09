@@ -2,21 +2,26 @@ import discord
 import random
 import requests
 import asyncio
+from enum import IntEnum
 import re
 from config import client, MINIGAME_CHANNEL_ID
 from minigame.minigame import Minigame
 
 MIN_LEN = 6
-DIFFICULTY_THRESHOLD = [20000, 10000, 5000]
+DIFFICULTY_THRESHOLD = [10000, 5000, 1000]
+
+class Level(IntEnum):
+    NORMAL = 0
+    HARD = 1
+    EXTREME = 2
+    MAX = 3
 
 class Hangman(Minigame):
     def __init__(self) -> None:
         f = open("minigame/hangman_words.txt", "r")
         lines = f.read().split("\n")
         f.close()
-        self.words_normal = []
-        self.words_hard = []
-        self.words_extreme = []
+        self.words: list[list[str]] = [[] for _ in range(4)]
         pattern = re.compile(r'"([a-zA-Z]+)","([0-9]+)"')
         for line in lines:
             m = pattern.match(line)
@@ -26,12 +31,13 @@ class Hangman(Minigame):
                 if len(word) < MIN_LEN:
                     continue
                 if frequency >= DIFFICULTY_THRESHOLD[0]:
-                    self.words_normal.append(word)
+                    self.words[Level.NORMAL].append(word)
                 elif frequency >= DIFFICULTY_THRESHOLD[1]:
-                    self.words_hard.append(word)
+                    self.words[Level.HARD].append(word)
                 elif frequency >= DIFFICULTY_THRESHOLD[2]:
-                    self.words_extreme.append(word)
-        print(f"{len(self.words_normal)}, {len(self.words_hard)}, {len(self.words_extreme)}")
+                    self.words[Level.EXTREME].append(word)
+                else:
+                    self.words[Level.MAX].append(word)
 
     def commands(self) -> list[str]:
         return ["hangman"]
@@ -39,7 +45,7 @@ class Hangman(Minigame):
     def help(self) -> str:
         return\
             "単語に含まれると思われる文字を 1 つずつ選びながら単語を当てるゲームです 🔠\n"\
-            "オプション引数として難易度 (hard, extreme) を与えることもできます"
+            "オプション引数として難易度 (hard, extreme, max) を与えることもできます"
     
     def help_detail(self) -> str:
         return\
@@ -56,21 +62,22 @@ class Hangman(Minigame):
     async def play(self, args: list[str]) -> None:
         minigame_channel = client.get_channel(MINIGAME_CHANNEL_ID)
         thread = await minigame_channel.create_thread(name="Hangman", type=discord.ChannelType.public_thread)
-        if len(args) == 0:
-            word = random.choice(self.words_normal)
-        elif args[0].lower() == "hard":
-            word = random.choice(self.words_hard)
-        elif args[0].lower() == "extreme":
-            word = random.choice(self.words_extreme)
-        else:
-            word = random.choice(self.words_normal)
+        level: Level = Level.NORMAL
+        if len(args) > 0:
+            if args[0].lower() == "hard":
+                level = Level.HARD
+            elif args[0].lower() == "extreme":
+                level = Level.EXTREME
+            elif args[0].lower() == "max":
+                level = Level.MAX
+        word = random.choice(self.words[level])
         life = 6
         opened = [False for _ in range(len(word))]
         chars = ""
         try:
             data = requests.get("https://api.dictionaryapi.dev/api/v2/entries/en/" + word).json()[0]
         except:
-            data = None
+            data = {}
         description = "**" + word + "**"
         if "phonetic" in data:
             description += " " + data["phonetic"]
@@ -90,7 +97,12 @@ class Hangman(Minigame):
         else:
             description += "\n(source not found)"
         await thread.send(
-            "__**hangman**__ 🔠\n"\
+            (
+                "__**Hangman**__ 🔠\n" if level == Level.NORMAL else
+                "__**Hangman hard**__ 💥\n" if level == Level.HARD else
+                "__**Hangman extreme**__ 🔥\n" if level == Level.EXTREME else
+                "__**Hangman max**__ 👹\n"
+            ) +
             "英単語を当てよう！\n"\
             "答え方:\n"\
                 "- アルファベット 1 種類を開ける\n"\
