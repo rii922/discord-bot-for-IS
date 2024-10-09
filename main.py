@@ -3,13 +3,17 @@ from config import client, TOKEN, BOT_NOTIFICATION_CHANNEL_ID, MINIGAME_CHANNEL_
 from keep_alive import keep_alive
 from notification.voice_channel_notification import voice_channel_notification
 from notification.emoji_notification import emoji_notification
-from minigame import akinator, hangman
+# from minigame import akinator, hangman
+from minigame.minigame import Minigame
+from minigame.hangman import Hangman
+from minigame.akinator import Akinator
+
+minigames: list[Minigame] = [Hangman(), Akinator()]
 
 @client.event
 async def on_ready():
     print("起動完了 💪")
     await client.get_channel(BOT_NOTIFICATION_CHANNEL_ID).send("起動完了 💪")
-    hangman.init()
 
 @client.event
 async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
@@ -25,10 +29,23 @@ async def on_message(message: discord.Message):
         return
     if message.author.bot:
         return
-    if message.content.strip() in akinator.COMMANDS:
-        await akinator.play()
-    if message.content.strip() in hangman.COMMANDS:
-        await hangman.play()
+    command = message.content.strip().split()
+    if command[0].lower() in ["help", "ヘルプ"]:
+        help_msgs = []
+        if len(command) == 1:
+            for minigame in minigames:
+                help_msgs.append(f"{' '.join([f'`{minigame_command}`' for minigame_command in minigame.commands()])}:\n{minigame.help()}")
+            await message.channel.send("\n\n".join(help_msgs))
+            return
+        else:
+            for minigame in minigames:
+                if command[1].lower() in minigame.commands():
+                    await message.channel.send(minigame.help_detail())
+                    return
+    for minigame in minigames:
+        if command[0].lower() in minigame.commands():
+            await minigame.play(command[1:])
+            break
 
 keep_alive()
 client.run(TOKEN)
