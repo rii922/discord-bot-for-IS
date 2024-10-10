@@ -19,7 +19,6 @@ class Minigame(ABC):
     def help_detail(self) -> str:
         """
         コマンド名を指定してヘルプコマンドが呼び出されたときに表示する、詳細な説明文
-        help() で指定した説明文の後に続けて表示される
         """
         pass
 

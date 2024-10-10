@@ -9,20 +9,23 @@ from minigame.minigame import Minigame
 
 MIN_LEN = 6
 DIFFICULTY_THRESHOLD = [10000, 5000, 1000]
+ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+ALPHABET_RUSSIAN = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя"
 
 class Level(IntEnum):
     NORMAL = 0
     HARD = 1
     EXTREME = 2
     MAX = 3
+    RUSSIAN = 4
 
 class Hangman(Minigame):
     def __init__(self) -> None:
         f = open("minigame/hangman_words.txt", "r")
         lines = f.read().split("\n")
         f.close()
-        self.words: list[list[str]] = [[] for _ in range(4)]
-        pattern = re.compile(r'"([a-zA-Z]+)","([0-9]+)"')
+        self.words: list[list[str]] = [[] for _ in range(5)]
+        pattern = re.compile(f'"([{ALPHABET}]+)","([0-9]+)"')
         for line in lines:
             m = pattern.match(line)
             if m is not None and len(m.groups()) >= 2:
@@ -38,6 +41,16 @@ class Hangman(Minigame):
                     self.words[Level.EXTREME].append(word)
                 else:
                     self.words[Level.MAX].append(word)
+        f = open("minigame/hangman_words_russian.txt", "r")
+        lines = f.read().split("\n")
+        f.close()
+        pattern = re.compile(f"([{ALPHABET_RUSSIAN}]+)")
+        for line in lines:
+            m = pattern.match(line)
+            if m is not None and len(m.groups()) >= 1:
+                word = m.group(1).lower()
+                if len(word) >= MIN_LEN:
+                    self.words[Level.RUSSIAN].append(word)
 
     def commands(self) -> list[str]:
         return ["hangman"]
@@ -45,7 +58,8 @@ class Hangman(Minigame):
     def help(self) -> str:
         return\
             "単語に含まれると思われる文字を 1 つずつ選びながら単語を当てるゲームです 🔠\n"\
-            "オプション引数として難易度 (hard, extreme, max) を与えることもできます"
+            "オプション引数として難易度 (hard, extreme, max) を与えることもできます\n"\
+            "引数に russian を指定するとロシア語バージョンになります 🇷🇺"
     
     def help_detail(self) -> str:
         return\
@@ -70,40 +84,51 @@ class Hangman(Minigame):
                 level = Level.EXTREME
             elif args[0].lower() == "max":
                 level = Level.MAX
+            elif args[0].lower() == "russian":
+                level = Level.RUSSIAN
         word = random.choice(self.words[level])
         life = 6
         opened = [False for _ in range(len(word))]
         chars = ""
-        try:
-            data = requests.get("https://api.dictionaryapi.dev/api/v2/entries/en/" + word).json()[0]
-        except:
-            data = {}
-        description = "**" + word + "**"
-        if "phonetic" in data:
-            description += " " + data["phonetic"]
+        if level != Level.RUSSIAN:
+            alphabet = ALPHABET
+            try:
+                data = requests.get("https://api.dictionaryapi.dev/api/v2/entries/en/" + word).json()[0]
+            except:
+                data = {}
+            description = "**" + word + "**"
+            if "phonetic" in data:
+                description += " " + data["phonetic"]
+            else:
+                description += " (phonetic not found)"
+            if "meanings" in data:
+                for meaning in data["meanings"]:
+                    description += "\n__" + meaning["partOfSpeech"] + "__"
+                    for definition in meaning["definitions"]:
+                        description += "\n- " + definition["definition"]
+            else:
+                description += "\n(meanings not found)"
+            if "sourceUrls" in data:
+                description += "\nsource:"
+                for source in data["sourceUrls"]:
+                    description += "\n- " + source
+            else:
+                description += "\n(source not found)"
         else:
-            description += " (phonetic not found)"
-        if "meanings" in data:
-            for meaning in data["meanings"]:
-                description += "\n__" + meaning["partOfSpeech"] + "__"
-                for definition in meaning["definitions"]:
-                    description += "\n- " + definition["definition"]
-        else:
-            description += "\n(meanings not found)"
-        if "sourceUrls" in data:
-            description += "\nsource:"
-            for source in data["sourceUrls"]:
-                description += "\n- " + source
-        else:
-            description += "\n(source not found)"
+            alphabet = ALPHABET_RUSSIAN
+            description = ""
         await thread.send(
             (
                 "__**Hangman**__ 🔠\n" if level == Level.NORMAL else
                 "__**Hangman hard**__ 💥\n" if level == Level.HARD else
                 "__**Hangman extreme**__ 🔥\n" if level == Level.EXTREME else
-                "__**Hangman max**__ 👹\n"
+                "__**Hangman max**__ 👹\n" if level == Level.MAX else
+                "__**Hangman Russian 🇷🇺**__\n"
             ) +
-            "英単語を当てよう！\n"\
+            (
+                "ロシア語の単語を当てよう！\n" if level == Level.RUSSIAN else
+                "英単語を当てよう！\n"
+            ) +
             "答え方:\n"\
                 "- アルファベット 1 種類を開ける\n"\
                 "- 単語を丸ごと答える"
@@ -112,7 +137,7 @@ class Hangman(Minigame):
             if ans_message.channel != thread:
                 return False
             for c in ans_message.content:
-                if not ("a" <= c <= "z" or "A" <= c <= "Z"):
+                if not c in alphabet:
                     return False
             return True
         while life > 0:
@@ -152,4 +177,5 @@ class Hangman(Minigame):
                 break
         if life == 0:
             await thread.send("残念... 😇\n正解は**" + word + "**でした！")
-        await thread.send(description)
+        if level != Level.RUSSIAN:
+            await thread.send(description)
