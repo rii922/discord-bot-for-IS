@@ -123,7 +123,7 @@ class Hangman(Minigame):
                 "__**Hangman hard**__ 💥\n" if level == Level.HARD else
                 "__**Hangman extreme**__ 🔥\n" if level == Level.EXTREME else
                 "__**Hangman max**__ 👹\n" if level == Level.MAX else
-                "__**Hangman Russian 🇷🇺**__\n"
+                "__**Hangman Russian**__ 🇷🇺\n"
             ) +
             (
                 "ロシア語の単語を当てよう！\n" if level == Level.RUSSIAN else
