@@ -6,8 +6,9 @@ from notification.emoji_notification import emoji_notification
 from minigame.minigame import Minigame
 from minigame.hangman import Hangman
 from minigame.akinator import Akinator
+from minigame.full_flash import FullFlash
 
-minigames: list[Minigame] = [Hangman(), Akinator()]
+minigames: list[Minigame] = [Hangman(), Akinator(), FullFlash()]
 
 @client.event
 async def on_ready():
@@ -31,7 +32,7 @@ async def on_message(message: discord.Message):
     command = message.content.strip().split()
     if command[0].lower() in ["help", "ヘルプ"]:
         help_msgs = [
-            "`help`:\n"\
+            "`help` `ヘルプ`:\n"\
             "ヘルプを表示します 🔰\n"\
             "オプション引数として他のコマンドを与えると、そのコマンドに関する詳しいヘルプを表示します"
         ]
