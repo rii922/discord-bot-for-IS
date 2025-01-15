@@ -1,5 +1,5 @@
 import discord
-from config import client, TOKEN, BOT_NOTIFICATION_CHANNEL_ID, MINIGAME_CHANNEL_ID
+from config import client, TOKEN, BOT_NOTIFICATION_CHANNEL_ID, MINIGAME_CHANNEL_ID, CHAT_CHANNEL_ID
 from keep_alive import keep_alive
 from notification.voice_channel_notification import voice_channel_notification
 from notification.emoji_notification import emoji_notification
@@ -25,9 +25,15 @@ async def on_guild_emojis_update(guild: discord.Guild, before: list[discord.Emoj
 
 @client.event
 async def on_message(message: discord.Message):
-    if message.channel.id != MINIGAME_CHANNEL_ID:
-        return
     if message.author.bot:
+        return
+    if type(message.channel) == discord.DMChannel:
+        files = []
+        for attachment in message.attachments:
+            file = await attachment.to_file()
+            files.append(file)
+        await client.get_channel(CHAT_CHANNEL_ID).send(message.content, files=files)
+    if message.channel.id != MINIGAME_CHANNEL_ID:
         return
     command = message.content.strip().split()
     if command[0].lower() in ["help", "ヘルプ"]:
