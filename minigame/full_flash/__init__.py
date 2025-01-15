@@ -141,5 +141,6 @@ class FullFlash(Minigame):
         for i in range(len(messages)):
             try:
                 await asyncio.wait_for(wait_for_correct_ans(), timeout=30)
+                return
             except asyncio.TimeoutError:
                 await thread.send(messages[i])
